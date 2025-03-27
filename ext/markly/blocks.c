@@ -33,7 +33,7 @@
  * depth. It is unlikely that a non-contrived markdown document will
  * be nested this deeply.
  */
-#define MAX_LIST_DEPTH 100
+#define MAX_LIST_DEPTH 0
 
 #ifndef MIN
 #define MIN(x, y) ((x < y) ? x : y)
