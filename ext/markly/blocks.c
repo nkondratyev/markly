@@ -34,7 +34,12 @@
  * depth. It is unlikely that a non-contrived markdown document will
  * be nested this deeply.
  */
-#define MAX_LIST_DEPTH 0
+#define MAX_LIST_DEPTH 100
+
+/**
+ * Lists are disabled: list markers are never recognised, so they stay literal text.
+ */
+#define MAX_LIST_MARKER_DEPTH 0
 
 #ifndef MIN
 #define MIN(x, y) ((x < y) ? x : y)
@@ -1292,7 +1297,7 @@ static void open_new_blocks(cmark_parser *parser, cmark_node **container,
       (*container)->internal_offset = matched;
     } else if ((!indented || cont_type == CMARK_NODE_LIST) &&
 	       parser->indent < 4 &&
-               depth < MAX_LIST_DEPTH &&
+               depth < MAX_LIST_MARKER_DEPTH &&
                (matched = parse_list_marker(
                     parser->mem, input, parser->first_nonspace,
                     (*container)->type == CMARK_NODE_PARAGRAPH, &data))) {
