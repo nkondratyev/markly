@@ -23,6 +23,7 @@ describe Markly::Node do
 	
 	with "#source_position" do
 		it "can generate source positions" do
+			skip "List markers are not parsed in this fork."
 			source_positions = []
 			
 			document.walk do |node|

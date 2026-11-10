@@ -5,6 +5,7 @@
 # Copyright, 2025-2026, by Peter H. Boling.
 
 require "markly"
+require "list_nodes"
 
 describe Markly::Node do
 	let(:document) {Markly.parse("Hi *there*. This has __many nodes__!")}
@@ -71,6 +72,8 @@ describe Markly::Node do
 				
 				[^note]: Definition.
 			MARKDOWN
+			# List markers are not parsed in this fork, so the ordered list is built by hand.
+			document.append_child(ListNodes.list(:ordered_list, %w[Ordered List], start: 3))
 			
 			copy = document.dup
 			original_nodes = document.walk.to_a
@@ -224,7 +227,7 @@ describe Markly::Node do
 	end
 	
 	with "#list_type" do
-		let(:document) {Markly.parse("* Bullet\n* Bullet")}
+		let(:document) {ListNodes.document(:bullet_list, %w[Bullet Bullet])}
 		let(:list_node) {document.first_child}
 		
 		it "has a list type" do
@@ -239,7 +242,7 @@ describe Markly::Node do
 	end
 	
 	with "#list_start" do
-		let(:document) {Markly.parse("1. One\n2. Two")}
+		let(:document) {ListNodes.document(:ordered_list, %w[One Two], start: 1)}
 		let(:list_node) {document.first_child}
 		
 		it "has a list start" do
@@ -254,8 +257,8 @@ describe Markly::Node do
 	end
 	
 	with "#list_tight" do
-		let(:ul_list) {Markly.parse("* Bullet\n* Bullet").first_child}
-		let(:ol_list) {Markly.parse("1. One\n2. Two").first_child}
+		let(:ul_list) {ListNodes.list(:bullet_list, %w[Bullet Bullet])}
+		let(:ol_list) {ListNodes.list(:ordered_list, %w[One Two], start: 1)}
 		
 		it "has a list tight" do
 			expect(ul_list.list_tight).to be == true
