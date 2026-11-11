@@ -1,28 +1,66 @@
 # Markly
 
-A parser and abstract syntax tree for Markdown documents (CommonMark compatible) in Ruby. Originally forked from
-[CommonMarker](https://github.com/gjtorikian/commonmarker). It also includes extensions to the CommonMark spec as
-documented in the [GitHub Flavored Markdown spec](http://github.github.com/gfm/), such as support for tables,
-strikethroughs, and autolinking.
+A parser and abstract syntax tree for Markdown documents (CommonMark compatible) in Ruby. Originally forked from [CommonMarker](https://github.com/gjtorikian/commonmarker). It also includes extensions to the CommonMark spec as documented in the [GitHub Flavored Markdown spec](http://github.github.com/gfm/), such as support for tables, strikethroughs, and autolinking.
 
-[![Development Status](https://github.com/ioquatix/markly/workflows/Test/badge.svg)](https://github.com/ioquatix/markly/actions?workflow=Test)
+[![Development Status](https://github.com/socketry/markly/workflows/Test/badge.svg)](https://github.com/socketry/markly/actions?workflow=Test)
 
 ## Motivation
 
-This code base was originally forked from [Commonmarker](https://github.com/gjtorikian/commonmarker) before they
-switched from `cmark-gfm` (C) to `comrak` (Rust). The original implementation provided access to the abstract syntax
-tree (AST), which is useful for building tools on top of Markdown. The Rust implementation does not provide this
-functionality, and so this fork was created to continue to provide these (and more) features.
+This code base was originally forked from [Commonmarker](https://github.com/gjtorikian/commonmarker) before they switched from `cmark-gfm` (C) to `comrak` (Rust). The original implementation provided access to the abstract syntax tree (AST), which is useful for building tools on top of Markdown. The Rust implementation did not provide this functionality, and so this fork was created to continue to provide these (and more) features.
+
+It should be noted that `commonmarker` re-introduced AST access, but the original C implementation in this fork is [3-4x faster at processing Markdown into HTML](https://github.com/gjtorikian/commonmarker?tab=readme-ov-file#benchmarks) and has a more advanced HTML generation and AST processing features.
 
 ## Usage
 
-Please see the [project documentation](https://ioquatix.github.io/markly/) for more details.
+Please see the [project documentation](https://socketry.github.io/markly/) for more details.
 
-  - [Getting Started](https://ioquatix.github.io/markly/guides/getting-started/index) - This guide explains now to
-    install and use Markly.
+  - [Getting Started](https://socketry.github.io/markly/guides/getting-started/index) - This guide explains now to install and use Markly.
 
-  - [Abstract Syntax Tree](https://ioquatix.github.io/markly/guides/abstract-syntax-tree/index) - This guide explains
-    how to use Markly's abstract syntax tree (AST) to parse and manipulate Markdown documents.
+  - [Extensions](https://socketry.github.io/markly/guides/extensions/index) - This guide explains how to enable and use Markly's Markdown extensions.
+
+  - [Abstract Syntax Tree](https://socketry.github.io/markly/guides/abstract-syntax-tree/index) - This guide explains how to use Markly's abstract syntax tree (AST) to parse and manipulate Markdown documents.
+
+  - [Headings](https://socketry.github.io/markly/guides/headings/index) - This guide explains how to work with headings in Markly, including extracting them for navigation and handling duplicate heading text.
+
+## Releases
+
+Please see the [project releases](https://socketry.github.io/markly/releases/index) for all releases.
+
+### v0.19.0
+
+  - Add `Markly::HTML_BLOCK_BLANK_LINES` for keeping consistently indented HTML content together across blank lines.
+
+### v0.18.0
+
+  - Preserve complete node and extension metadata when duplicating node trees.
+
+### v0.17.0
+
+  - Add opt-in language prefixes for inline code spans with `Markly::INLINE_CODE_INFO`, expose code metadata through `Node#code_info`, and provide `Node#code_language` as a convenient language accessor.
+  - Expose fenced code-block metadata through `Node#fence` and `Node::Fence`.
+  - Add `Node#next_header`, retain `Node#next_heading` as an alias, and correctly recognize header nodes.
+  - Raise `NotImplementedError` from the base renderer's unimplemented code-block callback instead of recursing indefinitely.
+  - Remove unused legacy separator helpers from the Ruby renderer.
+
+### v0.16.0
+
+  - Update `cmark-gfm` from upstream, including two table-rendering protections: avoid repeatedly scanning preceding cells, and limit the number of automatically completed cells to prevent denial of service.
+  - Correct `end_line` source positions for single-line and multi-line HTML blocks.
+  - Fix trailing newlines when rendering inline nodes.
+  - Add support for front matter (`CMARK_OPT_FRONT_MATTER`): a `---` delimited block at the start of a document is captured as a `CMARK_NODE_FRONT_MATTER` node.  The raw content is available via `node.string_content` and an optional format hint (e.g. `"yaml"`, `"toml"`) via `node.fence_info`.
+  - Allow `:` in HTML tag names to support XML namespace prefixes (e.g. `<svg:circle>`, `<xhtml:div>`).
+
+### v0.15.1
+
+  - Add agent context.
+
+### v0.15.0
+
+  - Introduced `Markly::Renderer::Headings` class for extracting headings from markdown documents with automatic duplicate ID resolution. When rendering HTML with `ids: true`, duplicate heading text now automatically gets unique IDs (`deployment`, `deployment-2`, `deployment-3`). The `Headings` class can also be used to extract headings for building navigation or table of contents.
+
+### v0.14.0
+
+  - Expose `Markly::Renderer::HTML.anchor_for` method to generate URL-safe anchors from headers.
 
 ## Contributing
 
@@ -33,6 +71,22 @@ We welcome contributions to this project.
 3.  Commit your changes (`git commit -am 'Add some feature'`).
 4.  Push to the branch (`git push origin my-new-feature`).
 5.  Create new Pull Request.
+
+### Running Tests
+
+To run the test suite:
+
+``` shell
+bundle exec sus
+```
+
+### Making Releases
+
+To make a new release:
+
+``` shell
+bundle exec bake gem:release:patch # or minor or major
+```
 
 ### Developer Certificate of Origin
 

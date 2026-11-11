@@ -145,15 +145,154 @@ cmark_node *cmark_node_new(cmark_node_type type) {
   return cmark_node_new_with_ext(type, NULL);
 }
 
+static cmark_chunk S_clone_chunk(cmark_mem *mem, const cmark_chunk *source) {
+  cmark_chunk clone = {NULL, source->len, 1};
+  clone.data = (unsigned char *)mem->calloc(source->len + 1, 1);
+  if (source->len > 0) {
+    memcpy(clone.data, source->data, source->len);
+  }
+  return clone;
+}
+
+static cmark_node *S_clone_node(cmark_node *node) {
+  cmark_mem *mem = NODE_MEM(node);
+  cmark_node *clone = cmark_node_new_with_mem_and_ext(
+      (cmark_node_type)node->type, mem, node->extension);
+
+  if (!clone) {
+    return NULL;
+  }
+
+  cmark_strbuf_set(&clone->content, node->content.ptr, node->content.size);
+  clone->start_line = node->start_line;
+  clone->start_column = node->start_column;
+  clone->end_line = node->end_line;
+  clone->end_column = node->end_column;
+  clone->internal_offset = node->internal_offset;
+  clone->flags = node->flags;
+  clone->footnote = node->footnote;
+
+  switch (node->type) {
+  case CMARK_NODE_HEADING:
+    clone->as.heading = node->as.heading;
+    break;
+  case CMARK_NODE_LIST:
+  case CMARK_NODE_ITEM:
+    clone->as.list = node->as.list;
+    break;
+  case CMARK_NODE_CODE_BLOCK:
+  case CMARK_NODE_FRONT_MATTER:
+  case CMARK_NODE_CODE:
+    clone->as.code = node->as.code;
+    clone->as.code.info = S_clone_chunk(mem, &node->as.code.info);
+    clone->as.code.literal = S_clone_chunk(mem, &node->as.code.literal);
+    break;
+  case CMARK_NODE_TEXT:
+  case CMARK_NODE_HTML_INLINE:
+  case CMARK_NODE_HTML_BLOCK:
+  case CMARK_NODE_FOOTNOTE_REFERENCE:
+  case CMARK_NODE_FOOTNOTE_DEFINITION:
+    clone->as.literal = S_clone_chunk(mem, &node->as.literal);
+    break;
+  case CMARK_NODE_LINK:
+  case CMARK_NODE_IMAGE:
+    clone->as.link.url = S_clone_chunk(mem, &node->as.link.url);
+    clone->as.link.title = S_clone_chunk(mem, &node->as.link.title);
+    break;
+  case CMARK_NODE_CUSTOM_BLOCK:
+  case CMARK_NODE_CUSTOM_INLINE:
+    clone->as.custom.on_enter = S_clone_chunk(mem, &node->as.custom.on_enter);
+    clone->as.custom.on_exit = S_clone_chunk(mem, &node->as.custom.on_exit);
+    break;
+  default:
+    break;
+  }
+
+  if (node->extension && node->extension->opaque_alloc_func) {
+    if (!node->extension->opaque_copy_func) {
+      cmark_node_free(clone);
+      return NULL;
+    }
+
+    node->extension->opaque_copy_func(node->extension, mem, clone, node);
+  }
+
+  for (cmark_node *child = node->first_child; child; child = child->next) {
+    cmark_node *child_clone = S_clone_node(child);
+    if (!child_clone) {
+      cmark_node_free(clone);
+      return NULL;
+    }
+
+    if (!cmark_node_append_child(clone, child_clone)) {
+      cmark_node_free(child_clone);
+      cmark_node_free(clone);
+      return NULL;
+    }
+  }
+
+  return clone;
+}
+
+static cmark_node *S_find_clone(cmark_node *source, cmark_node *clone,
+                                cmark_node *target) {
+  if (source == target) {
+    return clone;
+  }
+
+  cmark_node *source_child = source->first_child;
+  cmark_node *clone_child = clone->first_child;
+  while (source_child && clone_child) {
+    cmark_node *result = S_find_clone(source_child, clone_child, target);
+    if (result) {
+      return result;
+    }
+    source_child = source_child->next;
+    clone_child = clone_child->next;
+  }
+
+  return NULL;
+}
+
+static void S_clone_footnote_links(cmark_node *source, cmark_node *clone,
+                                   cmark_node *source_root,
+                                   cmark_node *clone_root) {
+  if (source->parent_footnote_def) {
+    clone->parent_footnote_def =
+        S_find_clone(source_root, clone_root, source->parent_footnote_def);
+  }
+
+  cmark_node *source_child = source->first_child;
+  cmark_node *clone_child = clone->first_child;
+  while (source_child && clone_child) {
+    S_clone_footnote_links(source_child, clone_child, source_root, clone_root);
+    source_child = source_child->next;
+    clone_child = clone_child->next;
+  }
+}
+
+cmark_node *cmark_node_clone(cmark_node *node) {
+  if (!node) {
+    return NULL;
+  }
+
+  cmark_node *clone = S_clone_node(node);
+  if (clone) {
+    S_clone_footnote_links(node, clone, node, clone);
+  }
+  return clone;
+}
+
 static void free_node_as(cmark_node *node) {
   switch (node->type) {
     case CMARK_NODE_CODE_BLOCK:
+    case CMARK_NODE_FRONT_MATTER:
+    case CMARK_NODE_CODE:
     cmark_chunk_free(NODE_MEM(node), &node->as.code.info);
     cmark_chunk_free(NODE_MEM(node), &node->as.code.literal);
       break;
     case CMARK_NODE_TEXT:
     case CMARK_NODE_HTML_INLINE:
-    case CMARK_NODE_CODE:
     case CMARK_NODE_HTML_BLOCK:
     case CMARK_NODE_FOOTNOTE_REFERENCE:
     case CMARK_NODE_FOOTNOTE_DEFINITION:
@@ -288,6 +427,8 @@ const char *cmark_node_get_type_string(cmark_node *node) {
     return "link";
   case CMARK_NODE_IMAGE:
     return "image";
+  case CMARK_NODE_FRONT_MATTER:
+    return "front_matter";
   }
 
   return "<unknown>";
@@ -375,12 +516,13 @@ const char *cmark_node_get_literal(cmark_node *node) {
   case CMARK_NODE_HTML_BLOCK:
   case CMARK_NODE_TEXT:
   case CMARK_NODE_HTML_INLINE:
-  case CMARK_NODE_CODE:
   case CMARK_NODE_FOOTNOTE_REFERENCE:
   case CMARK_NODE_FOOTNOTE_DEFINITION:
     return cmark_chunk_to_cstr(NODE_MEM(node), &node->as.literal);
 
+  case CMARK_NODE_CODE:
   case CMARK_NODE_CODE_BLOCK:
+  case CMARK_NODE_FRONT_MATTER:
     return cmark_chunk_to_cstr(NODE_MEM(node), &node->as.code.literal);
 
   default:
@@ -399,12 +541,13 @@ int cmark_node_set_literal(cmark_node *node, const char *content) {
   case CMARK_NODE_HTML_BLOCK:
   case CMARK_NODE_TEXT:
   case CMARK_NODE_HTML_INLINE:
-  case CMARK_NODE_CODE:
   case CMARK_NODE_FOOTNOTE_REFERENCE:
     cmark_chunk_set_cstr(NODE_MEM(node), &node->as.literal, content);
     return 1;
 
+  case CMARK_NODE_CODE:
   case CMARK_NODE_CODE_BLOCK:
+  case CMARK_NODE_FRONT_MATTER:
     cmark_chunk_set_cstr(NODE_MEM(node), &node->as.code.literal, content);
     return 1;
 
@@ -590,12 +733,66 @@ int cmark_node_set_item_index(cmark_node *node, int idx) {
   }
 }
 
+const char *cmark_node_get_code_info(cmark_node *node) {
+  if (node == NULL) {
+    return NULL;
+  }
+
+  if (node->type == CMARK_NODE_CODE ||
+      node->type == CMARK_NODE_CODE_BLOCK ||
+      node->type == CMARK_NODE_FRONT_MATTER) {
+    return cmark_chunk_to_cstr(NODE_MEM(node), &node->as.code.info);
+  } else {
+    return NULL;
+  }
+}
+
+static int valid_inline_code_info(const char *info) {
+  if (info == NULL || *info == '\0') {
+    return 1;
+  }
+
+  if (!cmark_is_inline_code_info_start_char(*info)) {
+    return 0;
+  }
+
+  while (*++info) {
+    if (!cmark_is_inline_code_info_char(*info)) {
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
+int cmark_node_set_code_info(cmark_node *node, const char *info) {
+  if (node == NULL) {
+    return 0;
+  }
+
+  if (node->type == CMARK_NODE_CODE) {
+    if (!valid_inline_code_info(info)) {
+      return 0;
+    }
+
+    cmark_chunk_set_cstr(NODE_MEM(node), &node->as.code.info, info);
+    return 1;
+  } else if (node->type == CMARK_NODE_CODE_BLOCK ||
+             node->type == CMARK_NODE_FRONT_MATTER) {
+    cmark_chunk_set_cstr(NODE_MEM(node), &node->as.code.info, info);
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
 const char *cmark_node_get_fence_info(cmark_node *node) {
   if (node == NULL) {
     return NULL;
   }
 
-  if (node->type == CMARK_NODE_CODE_BLOCK) {
+  if (node->type == CMARK_NODE_CODE_BLOCK ||
+      node->type == CMARK_NODE_FRONT_MATTER) {
     return cmark_chunk_to_cstr(NODE_MEM(node), &node->as.code.info);
   } else {
     return NULL;
@@ -607,7 +804,8 @@ int cmark_node_set_fence_info(cmark_node *node, const char *info) {
     return 0;
   }
 
-  if (node->type == CMARK_NODE_CODE_BLOCK) {
+  if (node->type == CMARK_NODE_CODE_BLOCK ||
+      node->type == CMARK_NODE_FRONT_MATTER) {
     cmark_chunk_set_cstr(NODE_MEM(node), &node->as.code.info, info);
     return 1;
   } else {

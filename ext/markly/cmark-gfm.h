@@ -53,6 +53,7 @@ typedef enum {
   CMARK_NODE_HEADING        = CMARK_NODE_TYPE_BLOCK | 0x0009,
   CMARK_NODE_THEMATIC_BREAK = CMARK_NODE_TYPE_BLOCK | 0x000a,
   CMARK_NODE_FOOTNOTE_DEFINITION = CMARK_NODE_TYPE_BLOCK | 0x000b,
+  CMARK_NODE_FRONT_MATTER       = CMARK_NODE_TYPE_BLOCK | 0x000c,
 
   /* Inline */
   CMARK_NODE_TEXT          = CMARK_NODE_TYPE_INLINE | 0x0001,
@@ -194,6 +195,12 @@ CMARK_GFM_EXPORT cmark_node *cmark_node_new_with_ext(cmark_node_type type,
 CMARK_GFM_EXPORT cmark_node *cmark_node_new_with_mem_and_ext(cmark_node_type type,
                                                 cmark_mem *mem,
                                                 cmark_syntax_extension *extension);
+
+/** Creates an independent deep copy of 'node' and all its children.
+ * User data is not copied. Returns NULL when extension-specific node data
+ * cannot be copied.
+ */
+CMARK_GFM_EXPORT cmark_node *cmark_node_clone(cmark_node *node);
 
 /** Frees the memory allocated for a node and any children.
  */
@@ -423,6 +430,18 @@ CMARK_GFM_EXPORT int cmark_node_get_item_index(cmark_node *node);
 /** Sets item index of 'node'. Returns 1 on success, 0 on failure.
  */
 CMARK_GFM_EXPORT int cmark_node_set_item_index(cmark_node *node, int idx);
+
+/** Returns the info string from a code block or the language identifier from
+ * an inline code span.
+ */
+CMARK_GFM_EXPORT const char *cmark_node_get_code_info(cmark_node *node);
+
+/** Sets the info string in a code block or the language identifier on an
+ * inline code span, returning 1 on success and 0 on failure. Inline code
+ * language identifiers must begin with an alphanumeric character and may
+ * additionally contain '_', '-', '+', '#', and '.'.
+ */
+CMARK_GFM_EXPORT int cmark_node_set_code_info(cmark_node *node, const char *info);
 
 /** Returns the info string from a fenced code block.
  */
@@ -767,6 +786,23 @@ char *cmark_render_latex_with_mem(cmark_node *root, int options, int width, cmar
  * a separate attribute.
  */
 #define CMARK_OPT_FULL_INFO_STRING (1 << 16)
+
+/** Parse front matter ("---" delimited block at the start of the document)
+ *  and expose it as a CMARK_NODE_FRONT_MATTER node.  The raw content between
+ *  the delimiters is available via cmark_node_get_literal(); how it is
+ *  interpreted (e.g. as YAML, TOML, JSON) is left to the caller.
+ */
+#define CMARK_OPT_FRONT_MATTER (1 << 18)
+
+/** Parse inline code language prefixes, e.g. ruby:`code`.
+ */
+#define CMARK_OPT_INLINE_CODE_INFO (1 << 19)
+
+/** Allow indented content in type 6 and 7 HTML blocks to continue across
+ * blank lines. The indentation established by the HTML content must be
+ * preserved after each blank line.
+ */
+#define CMARK_OPT_HTML_BLOCK_BLANK_LINES (1 << 20)
 
 /**
  * ## Version information

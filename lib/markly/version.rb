@@ -4,8 +4,10 @@
 # Copyright, 2015-2020, by Garen Torikian.
 # Copyright, 2016-2017, by Yuki Izumi.
 # Copyright, 2017-2018, by Ashe Connor.
-# Copyright, 2020-2023, by Samuel Williams.
+# Copyright, 2020-2026, by Samuel Williams.
 
+# @namespace
 module Markly
-	VERSION = '0.13.0'
+	# @constant [String] The version of the Markly gem.
+	VERSION = "0.19.0"
 end

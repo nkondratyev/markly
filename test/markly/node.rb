@@ -1,14 +1,16 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2023-2024, by Samuel Williams.
+# Copyright, 2023-2026, by Samuel Williams.
+# Copyright, 2025-2026, by Peter H. Boling.
 
-require 'markly'
+require "markly"
+require "list_nodes"
 
 describe Markly::Node do
 	let(:document) {Markly.parse("Hi *there*. This has __many nodes__!")}
 	
-	with '#dup' do
+	with "#dup" do
 		it "can duplicate a document node" do
 			dup = document.dup
 			
@@ -24,9 +26,83 @@ describe Markly::Node do
 			expect(dup.to_html).to be == document.first_child.to_html
 			expect(dup).not.to be_equal(document.first_child)
 		end
+		
+		it "preserves extension metadata" do
+			document = Markly.parse("| Left | Right |\n| :--- | ---: |\n| A | B |\n", extensions: [:table])
+			dup = document.dup
+			
+			expect(dup.first_child.table_alignments).to be == [:left, :right]
+			expect(dup.to_html(extensions: [:table])).to be == document.to_html(extensions: [:table])
+		end
+		
+		it "preserves mixed node and extension metadata" do
+			flags = Markly::UNSAFE | Markly::FRONT_MATTER | Markly::FOOTNOTES | Markly::INLINE_CODE_INFO
+			extensions = %i[table tasklist strikethrough autolink tagfilter]
+			document = Markly.parse(<<~MARKDOWN, flags: flags, extensions: extensions)
+				--- yaml
+				title: Clone
+				---
+				# Heading
+				
+				> Quote with **strong** and *emphasis*.
+				
+				3. Ordered
+				4. List
+				
+				- [x] Complete
+				- [ ] Pending
+				
+				~~~~ ruby lineno=1
+				puts "fenced"
+				~~~~
+				
+				    indented
+				
+				Call ruby:`Object.new`, follow [link](url "title"), or view ![alt](image.png "image title").
+				
+				| Left | Right |
+				| :--- | ---: |
+				| A | B |
+				
+				~deleted~ and https://example.com
+				
+				<script>alert("filtered")</script>
+				
+				Footnote[^note].
+				
+				[^note]: Definition.
+			MARKDOWN
+			# List markers are not parsed in this fork, so the ordered list is built by hand.
+			document.append_child(ListNodes.list(:ordered_list, %w[Ordered List], start: 3))
+			
+			copy = document.dup
+			original_nodes = document.walk.to_a
+			copied_nodes = copy.walk.to_a
+			
+			expect(copied_nodes.map(&:type)).to be == original_nodes.map(&:type)
+			expect(copied_nodes.map(&:source_position)).to be == original_nodes.map(&:source_position)
+			expect(copy.to_html(flags: Markly::UNSAFE, extensions: extensions)).to be == document.to_html(flags: Markly::UNSAFE, extensions: extensions)
+			expect(copy.to_commonmark).to be == document.to_commonmark
+			
+			ordered_list = copied_nodes.find{|node| node.type == :list && node.list_type == :ordered_list}
+			expect(ordered_list.list_start).to be == 3
+			
+			fenced = copied_nodes.find{|node| node.type == :code_block && node.fence}
+			expect(fenced.fence).to be == Markly::Node::Fence.new("~", 4, 0)
+			expect(fenced.code_info).to be == "ruby lineno=1"
+			
+			inline_code = copied_nodes.find{|node| node.type == :code}
+			expect(inline_code.code_info).to be == "ruby"
+			
+			table = copied_nodes.find{|node| node.type == :table}
+			expect(table.table_alignments).to be == [:left, :right]
+			
+			footnote_reference = copied_nodes.find{|node| node.type == :footnote_reference}
+			expect(copied_nodes).to be(:include?, footnote_reference.parent_footnote_def)
+		end
 	end
 	
-	with '#type' do
+	with "#type" do
 		it "has the document type" do
 			expect(document.type).to be == :document
 		end
@@ -36,7 +112,7 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#first_child' do
+	with "#first_child" do
 		it "has a first child" do
 			expect(document.first_child.type).to be == :paragraph
 		end
@@ -83,7 +159,7 @@ describe Markly::Node do
 			expect(document.last_child.type).to be == :paragraph
 		end
 	end
-
+	
 	with "#parent" do
 		it "has a parent" do
 			expect(document.first_child.parent.type).to be == :document
@@ -91,7 +167,7 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#next' do
+	with "#next" do
 		it "has a next sibling" do
 			expect(document.first_child.first_child.next.type).to be == :emph
 			expect(document.first_child.first_child.next).to be == document.first_child.first_child.next
@@ -105,7 +181,7 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#url' do
+	with "#url" do
 		let(:document) {Markly.parse("[GitHub](https://www.github.com)")}
 		let(:url_node) {document.first_child.first_child}
 		
@@ -120,7 +196,7 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#title' do
+	with "#title" do
 		let(:document) {Markly.parse('![alt text](https://github.com/favicon.ico "Favicon")')}
 		let(:title_node) {document.first_child.first_child}
 		
@@ -135,8 +211,8 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#header_level' do
-		let(:document) {Markly.parse('### Header Three')}
+	with "#header_level" do
+		let(:document) {Markly.parse("### Header Three")}
 		let(:header_node) {document.first_child}
 		
 		it "has a header level" do
@@ -150,8 +226,8 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#list_type' do
-		let(:document) {Markly.parse("* Bullet\n* Bullet")}
+	with "#list_type" do
+		let(:document) {ListNodes.document(:bullet_list, %w[Bullet Bullet])}
 		let(:list_node) {document.first_child}
 		
 		it "has a list type" do
@@ -165,8 +241,8 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#list_start' do
-		let(:document) {Markly.parse("1. One\n2. Two")}
+	with "#list_start" do
+		let(:document) {ListNodes.document(:ordered_list, %w[One Two], start: 1)}
 		let(:list_node) {document.first_child}
 		
 		it "has a list start" do
@@ -180,9 +256,9 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#list_tight' do
-		let(:ul_list) {Markly.parse("* Bullet\n* Bullet").first_child}
-		let(:ol_list) {Markly.parse("1. One\n2. Two").first_child}
+	with "#list_tight" do
+		let(:ul_list) {ListNodes.list(:bullet_list, %w[Bullet Bullet])}
+		let(:ol_list) {ListNodes.list(:ordered_list, %w[One Two], start: 1)}
 		
 		it "has a list tight" do
 			expect(ul_list.list_tight).to be == true
@@ -199,22 +275,60 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#fence_info' do
+	with "#fence_info" do
 		let(:document) {Markly.parse("``` ruby\nputs 'wow'\n```")}
 		let(:fence_node) {document.first_child}
 		
 		it "has a fence info" do
 			expect(fence_node.fence_info).to be == "ruby"
+			expect(fence_node.code_info).to be == "ruby"
+			expect(fence_node.code_language).to be == "ruby"
 		end
 		
 		it "can set a fence info" do
 			fence_node.fence_info = "perl"
 			expect(fence_node.fence_info).to be == "perl"
+			expect(fence_node.code_info).to be == "perl"
 			expect(document.to_html).to be =~ /<pre><code class="language-perl">puts 'wow'\n<\/code><\/pre>/
+		end
+		
+		it "can set code info" do
+			fence_node.code_info = "python lineno=5"
+			expect(fence_node.fence_info).to be == "python lineno=5"
+			expect(fence_node.code_info).to be == "python lineno=5"
+			expect(fence_node.code_language).to be == "python"
 		end
 	end
 	
-	with '#find_header' do
+	with "#fence" do
+		let(:fenced_backtick_node) {Markly.parse("``` ruby\nputs 'wow'\n```").first_child}
+		let(:fenced_tilde_node) {Markly.parse("  ~~~~ ruby\n  puts 'wow'\n  ~~~~").first_child}
+		let(:indented_code_node) {Markly.parse("    puts 'wow'").first_child}
+		let(:paragraph_node) {Markly.parse("hello").first_child}
+		
+		it "returns fenced metadata for backtick fences" do
+			expect(fenced_backtick_node.fence).to be == Markly::Node::Fence.new("`", 3, 0)
+		end
+		
+		it "returns fenced metadata for tilde fences" do
+			fence = fenced_tilde_node.fence
+			
+			expect(fence).to be_a(Markly::Node::Fence)
+			expect(fence.character).to be == "~"
+			expect(fence.length).to be == 4
+			expect(fence.indent).to be == 2
+		end
+		
+		it "returns nil for non-fenced code blocks" do
+			expect(indented_code_node.fence).to be_nil
+		end
+		
+		it "returns nil for non-code nodes" do
+			expect(paragraph_node.fence).to be_nil
+		end
+	end
+	
+	with "#find_header" do
 		let(:document) {Markly.parse("# Heading\n\n## Subheading")}
 		
 		it "can find a heading" do
@@ -223,7 +337,29 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#replace_section' do
+	with "#next_header" do
+		let(:document) {Markly.parse("# Heading\n\nParagraph\n\n## Subheading")}
+		
+		it "finds the next sibling heading" do
+			heading = document.first_child
+			expect(heading.next_header).to be == heading.next.next
+		end
+		
+		it "returns nil when there is no subsequent heading" do
+			expect(document.last_child.next_header).to be_nil
+		end
+	end
+	
+	with "#next_heading" do
+		it "is an alias for #next_header" do
+			document = Markly.parse("# Heading\n\n## Subheading")
+			heading = document.first_child
+			
+			expect(heading.next_heading).to be == heading.next_header
+		end
+	end
+	
+	with "#replace_section" do
 		let(:document) {Markly.parse("# Heading\n\n## Subheading")}
 		let(:new_document) {Markly.parse("### New Heading")}
 		
@@ -260,7 +396,7 @@ describe Markly::Node do
 		end
 	end
 	
-	with '#extract_children' do
+	with "#extract_children" do
 		it "can extract children from header" do
 			header = Markly.parse("# Hello `World`").first_child
 			fragment = header.extract_children
@@ -268,6 +404,282 @@ describe Markly::Node do
 			expect(fragment.type).to be == :custom_inline
 			expect(fragment.to_html).to be == "Hello <code>World</code>"
 			expect(fragment.to_markdown).to be == "Hello `World`"
+		end
+	end
+	
+	with "#source_position" do
+		it "has valid position for paragraphs" do
+			doc = Markly.parse("Hello\n\nWorld")
+			paragraph = doc.first_child
+			pos = paragraph.source_position
+			
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be >= pos[:start_line]
+		end
+		
+		it "has valid position for HTML comments (regression test)" do
+			# HTML blocks on a single line should have end_line >= start_line
+			# Previously, end_line could be less than start_line due to a bug
+			# in the finalize() function in blocks.c
+			doc = Markly.parse("Text\n\n<!-- HTML comment -->\n\nMore text")
+			
+			doc.each do |node|
+				pos = node.source_position
+				expect(pos[:end_line]).to be >= pos[:start_line]
+			end
+		end
+		
+		it "has correct position for single-line HTML block" do
+			doc = Markly.parse("<!-- comment -->")
+			html_node = doc.first_child
+			pos = html_node.source_position
+			
+			expect(html_node.type).to be == :html
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 1
+		end
+		
+		it "has correct position for single-line HTML block without trailing newline" do
+			# Edge case: HTML block at EOF with no trailing newline
+			doc = Markly.parse("<!-- comment -->")
+			html_node = doc.first_child
+			pos = html_node.source_position
+			
+			expect(html_node.type).to be == :html
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 1
+			expect(pos[:end_line]).to be >= pos[:start_line]
+		end
+		
+		it "has correct position for single-line HTML block in middle of document" do
+			# HTML block between paragraphs
+			doc = Markly.parse("Para 1\n\n<!-- comment -->\n\nPara 2")
+			
+			html_node = nil
+			doc.each do |node|
+				html_node = node if node.type == :html
+			end
+			
+			expect(html_node).not.to be_nil
+			pos = html_node.source_position
+			expect(pos[:start_line]).to be == 3
+			expect(pos[:end_line]).to be == 3
+		end
+		
+		it "has correct position for HTML block type 3 (PHP)" do
+			# Test different HTML block type (type 3: <? ... ?>)
+			doc = Markly.parse("<?php echo 'test'; ?>")
+			html_node = doc.first_child
+			pos = html_node.source_position
+			
+			expect(html_node.type).to be == :html
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 1
+		end
+		
+		it "has correct position for HTML block type 4 (declaration)" do
+			# Test HTML declaration (type 4: <!SOMETHING>)
+			doc = Markly.parse("<!DOCTYPE html>")
+			html_node = doc.first_child
+			pos = html_node.source_position
+			
+			expect(html_node.type).to be == :html
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 1
+		end
+		
+		it "has correct position for HTML block type 5 (CDATA)" do
+			# Test CDATA section (type 5: <![CDATA[ ... ]]>)
+			doc = Markly.parse("<![CDATA[some data]]>")
+			html_node = doc.first_child
+			pos = html_node.source_position
+			
+			expect(html_node.type).to be == :html
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 1
+		end
+		
+		it "has correct position for multi-line HTML block" do
+			doc = Markly.parse("<!--\nLine 1\nLine 2\n-->")
+			html_node = doc.first_child
+			pos = html_node.source_position
+			
+			expect(html_node.type).to be == :html
+			expect(pos[:start_line]).to be == 1
+			# The block starts on line 1 and the closing --> is on line 4
+			expect(pos[:end_line]).to be == 4
+		end
+		
+		it "has correct position for fenced code block" do
+			# Fenced code blocks are another special case that ends on current line
+			doc = Markly.parse("```\ncode\n```")
+			code_block = doc.first_child
+			pos = code_block.source_position
+			
+			expect(code_block.type).to be == :code_block
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 3
+			expect(pos[:end_line]).to be >= pos[:start_line]
+		end
+		
+		it "has correct position for single-line fenced code block" do
+			# Single-line fenced code block
+			doc = Markly.parse("```\n```")
+			code_block = doc.first_child
+			pos = code_block.source_position
+			
+			expect(code_block.type).to be == :code_block
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 2
+		end
+		
+		it "has correct position for setext heading" do
+			# Setext headings are another special case
+			doc = Markly.parse("Heading\n=======")
+			heading = doc.first_child
+			pos = heading.source_position
+			
+			expect(heading.type).to be == :header
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 2
+			expect(pos[:end_line]).to be >= pos[:start_line]
+		end
+		
+		it "has correct position for ATX heading" do
+			# ATX headings follow the regular "ended on previous line" logic
+			doc = Markly.parse("# Heading\n\nNext para")
+			heading = doc.first_child
+			pos = heading.source_position
+			
+			expect(heading.type).to be == :header
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 1
+		end
+		
+		it "has correct position for multi-line HTML comment (type 2)" do
+			doc = Markly.parse("Para 1\n\n<!--\nContent\n-->\n\nPara 2")
+			
+			html_node = nil
+			doc.each do |node|
+				html_node = node if node.type == :html
+			end
+			
+			expect(html_node).not.to be_nil
+			pos = html_node.source_position
+			expect(pos[:start_line]).to be == 3
+			expect(pos[:end_line]).to be == 5
+		end
+		
+		it "has correct position for multi-line HTML declaration (type 4)" do
+			doc = Markly.parse("Para 1\n\n<!DOCTYPE\nhtml>\n\nPara 2")
+			
+			html_node = nil
+			doc.each do |node|
+				html_node = node if node.type == :html
+			end
+			
+			expect(html_node).not.to be_nil
+			pos = html_node.source_position
+			expect(pos[:start_line]).to be == 3
+			expect(pos[:end_line]).to be == 4
+		end
+		
+		it "has correct position for multi-line script block (type 1)" do
+			doc = Markly.parse("Para 1\n\n<script>\nalert(1);\n</script>\n\nPara 2")
+			
+			html_node = nil
+			doc.each do |node|
+				html_node = node if node.type == :html
+			end
+			
+			expect(html_node).not.to be_nil
+			pos = html_node.source_position
+			expect(pos[:start_line]).to be == 3
+			expect(pos[:end_line]).to be == 5
+		end
+		
+		it "has correct position for multi-line PHP block (type 3)" do
+			doc = Markly.parse("Para 1\n\n<?php\necho;\n?>\n\nPara 2")
+			
+			html_node = nil
+			doc.each do |node|
+				html_node = node if node.type == :html
+			end
+			
+			expect(html_node).not.to be_nil
+			pos = html_node.source_position
+			expect(pos[:start_line]).to be == 3
+			expect(pos[:end_line]).to be == 5
+		end
+		
+		it "has correct position for multi-line declaration block (type 4)" do
+			doc = Markly.parse("Para 1\n\n<!DOCTYPE\nhtml>\n\nPara 2")
+			
+			html_node = nil
+			doc.each do |node|
+				html_node = node if node.type == :html
+			end
+			
+			expect(html_node).not.to be_nil
+			pos = html_node.source_position
+			expect(pos[:start_line]).to be == 3
+			expect(pos[:end_line]).to be == 4
+		end
+		
+		it "has correct position for multi-line CDATA block (type 5)" do
+			doc = Markly.parse("Para 1\n\n<![CDATA[\ndata\n]]>\n\nPara 2")
+			
+			html_node = nil
+			doc.each do |node|
+				html_node = node if node.type == :html
+			end
+			
+			expect(html_node).not.to be_nil
+			pos = html_node.source_position
+			expect(pos[:start_line]).to be == 3
+			expect(pos[:end_line]).to be == 5
+		end
+		
+		it "has correct position for blank-terminated HTML block (type 6)" do
+			# Types 6-7 end at a blank line, so end_line is the last content line
+			doc = Markly.parse("<div>\ncontent\n</div>\n\nPara 2")
+			html_node = doc.first_child
+			pos = html_node.source_position
+			
+			expect(html_node.type).to be == :html
+			expect(pos[:start_line]).to be == 1
+			expect(pos[:end_line]).to be == 3
+		end
+		
+		it "ensures all nodes have valid position ranges" do
+			# Comprehensive test: no node should have end_line < start_line
+			markdown = <<~MD
+				# Title
+				
+				Paragraph with text.
+				
+				```ruby
+				code
+				```
+				
+				<!-- comment -->
+				
+				More text.
+				
+				Heading
+				-------
+				
+				<?php echo "test"; ?>
+				
+				Final paragraph.
+			MD
+			
+			doc = Markly.parse(markdown)
+			doc.each do |node|
+				pos = node.source_position
+				# All nodes must have valid ranges where end_line >= start_line
+				expect(pos[:end_line]).to be >= pos[:start_line]
+			end
 		end
 	end
 end

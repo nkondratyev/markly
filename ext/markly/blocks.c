@@ -23,6 +23,7 @@
 #include "houdini.h"
 #include "buffer.h"
 #include "footnotes.h"
+#include "front_matter.h"
 
 #define CODE_INDENT 4
 #define TAB_STOP 4
@@ -33,7 +34,12 @@
  * depth. It is unlikely that a non-contrived markdown document will
  * be nested this deeply.
  */
-#define MAX_LIST_DEPTH 0
+#define MAX_LIST_DEPTH 100
+
+/**
+ * Lists are disabled: list markers are never recognised, so they stay literal text.
+ */
+#define MAX_LIST_MARKER_DEPTH 0
 
 #ifndef MIN
 #define MIN(x, y) ((x < y) ? x : y)
@@ -66,6 +72,34 @@ static void S_set_last_line_checked(cmark_node *node) {
 
 static CMARK_INLINE bool S_is_line_end_char(char c) {
   return (c == '\n' || c == '\r');
+}
+
+// Returns true if block is being finalized on the same line it ends.
+// This happens for:
+// - Document node (special case)
+// - Fenced code blocks (end on the closing fence line)
+// - Setext headings (end on the underline)
+// - HTML block types 1-5 per CommonMark spec §4.6 (end on the line
+//   containing the closing marker)
+// - Any block finalized on the same line it started (e.g., single-line blocks)
+static CMARK_INLINE bool S_ends_on_current_line(cmark_parser *parser, cmark_node *b) {
+  return S_type(b) == CMARK_NODE_DOCUMENT ||
+         (S_type(b) == CMARK_NODE_CODE_BLOCK && b->as.code.fenced) ||
+         (S_type(b) == CMARK_NODE_HEADING && b->as.heading.setext) ||
+         // HTML block types per CommonMark spec §4.6:
+         //   1: <script>, <pre>, <style>, <textarea> (ends at </tag>)
+         //   2: <!-- (ends at -->)
+         //   3: <? (ends at ?>)
+         //   4: <! + letter (ends at >)
+         //   5: <![CDATA[ (ends at ]]>)
+         // All five end on the line containing their closing marker,
+         // similar to fenced code blocks.
+         // Types 6-7 end at a blank line, so their last content line is
+         // the previous line and they should NOT match here.
+         (S_type(b) == CMARK_NODE_HTML_BLOCK && b->as.html_block.type >= 1 &&
+          b->as.html_block.type <= 5) ||
+         // Single-line blocks: finalized on same line they started
+         b->start_line == parser->line_number;
 }
 
 static CMARK_INLINE bool S_is_space_or_tab(char c) {
@@ -131,6 +165,8 @@ static void cmark_parser_reset(cmark_parser *parser) {
 
   cmark_strbuf_init(parser->mem, &parser->curline, 256);
   cmark_strbuf_init(parser->mem, &parser->linebuf, 0);
+  cmark_strbuf_init(parser->mem, &parser->front_matter_buf, 0);
+  cmark_strbuf_init(parser->mem, &parser->front_matter_info, 0);
 
   cmark_node *document = make_document(parser->mem);
 
@@ -161,6 +197,8 @@ void cmark_parser_free(cmark_parser *parser) {
   cmark_parser_dispose(parser);
   cmark_strbuf_free(&parser->curline);
   cmark_strbuf_free(&parser->linebuf);
+  cmark_strbuf_free(&parser->front_matter_buf);
+  cmark_strbuf_free(&parser->front_matter_info);
   cmark_llist_free(parser->mem, parser->syntax_extensions);
   cmark_llist_free(parser->mem, parser->inline_syntax_extensions);
   mem->free(parser);
@@ -288,17 +326,15 @@ static cmark_node *finalize(cmark_parser *parser, cmark_node *b) {
   bool has_content;
 
   parent = b->parent;
-  assert(b->flags &
-         CMARK_NODE__OPEN); // shouldn't call finalize on closed blocks
+  assert(b->flags & CMARK_NODE__OPEN); // shouldn't call finalize on closed blocks
   b->flags &= ~CMARK_NODE__OPEN;
 
   if (parser->curline.size == 0) {
-    // end of input - line number has not been incremented
+    // end of input - line number has not been incremented:
     b->end_line = parser->line_number;
     b->end_column = parser->last_line_length;
-  } else if (S_type(b) == CMARK_NODE_DOCUMENT ||
-             (S_type(b) == CMARK_NODE_CODE_BLOCK && b->as.code.fenced) ||
-             (S_type(b) == CMARK_NODE_HEADING && b->as.heading.setext)) {
+  } else if (S_ends_on_current_line(parser, b)) {
+    // Block ends on current line (line_number already incremented):
     b->end_line = parser->line_number;
     b->end_column = parser->curline.size;
     if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\n')
@@ -306,6 +342,7 @@ static cmark_node *finalize(cmark_parser *parser, cmark_node *b) {
     if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\r')
       b->end_column -= 1;
   } else {
+    // Block ended on a previous line:
     b->end_line = parser->line_number - 1;
     b->end_column = parser->last_line_length;
   }
@@ -1005,7 +1042,7 @@ static bool parse_code_block_prefix(cmark_parser *parser, cmark_chunk *input,
 static bool parse_html_block_prefix(cmark_parser *parser,
                                     cmark_node *container) {
   bool res = false;
-  int html_block_type = container->as.html_block_type;
+  int html_block_type = container->as.html_block.type;
 
   assert(html_block_type >= 1 && html_block_type <= 7);
   switch (html_block_type) {
@@ -1019,7 +1056,32 @@ static bool parse_html_block_prefix(cmark_parser *parser,
     break;
   case 6:
   case 7:
-    res = !parser->blank;
+    if (!(parser->options & CMARK_OPT_HTML_BLOCK_BLANK_LINES)) {
+      res = !parser->blank;
+    } else if (parser->blank) {
+      // Tentatively retain blank lines. The next nonblank line determines
+      // whether the HTML block continues:
+      res = true;
+    } else if (S_last_line_blank(container)) {
+      // Establish the content indentation lazily so a blank line may follow
+      // the opening tag. A non-indented line still terminates the block:
+      if (container->as.html_block.indent == 0 && parser->indent > 0) {
+        container->as.html_block.indent = parser->indent;
+      }
+
+      res = container->as.html_block.indent > 0 &&
+            parser->indent >= container->as.html_block.indent;
+    } else {
+      // Record the shallowest positive content indentation before a blank
+      // line. Deeper nested HTML may then continue without changing it:
+      if (parser->indent > 0 &&
+          (container->as.html_block.indent == 0 ||
+           parser->indent < container->as.html_block.indent)) {
+        container->as.html_block.indent = parser->indent;
+      }
+
+      res = true;
+    }
     break;
   }
 
@@ -1192,7 +1254,7 @@ static void open_new_blocks(cmark_parser *parser, cmark_node **container,
                                    input, parser->first_nonspace))))) {
       *container = add_child(parser, *container, CMARK_NODE_HTML_BLOCK,
                              parser->first_nonspace + 1);
-      (*container)->as.html_block_type = matched;
+      (*container)->as.html_block.type = matched;
       // note, we don't adjust parser->offset because the tag is part of the
       // text
     } else if (!indented && cont_type == CMARK_NODE_PARAGRAPH &&
@@ -1217,7 +1279,8 @@ static void open_new_blocks(cmark_parser *parser, cmark_node **container,
                              parser->first_nonspace + 1);
       S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     } else if (!indented &&
-               parser->options & CMARK_OPT_FOOTNOTES &&
+               (parser->options & CMARK_OPT_FOOTNOTES) &&
+               depth < MAX_LIST_DEPTH &&
                (matched = scan_footnote_definition(input, parser->first_nonspace))) {
       cmark_chunk c = cmark_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
 
@@ -1234,7 +1297,7 @@ static void open_new_blocks(cmark_parser *parser, cmark_node **container,
       (*container)->internal_offset = matched;
     } else if ((!indented || cont_type == CMARK_NODE_LIST) &&
 	       parser->indent < 4 &&
-               depth < MAX_LIST_DEPTH &&
+               depth < MAX_LIST_MARKER_DEPTH &&
                (matched = parse_list_marker(
                     parser->mem, input, parser->first_nonspace,
                     (*container)->type == CMARK_NODE_PARAGRAPH, &data))) {
@@ -1388,7 +1451,7 @@ static void add_text_to_container(cmark_parser *parser, cmark_node *container,
       add_line(container, input, parser);
 
       int matches_end_condition;
-      switch (container->as.html_block_type) {
+      switch (container->as.html_block.type) {
       case 1:
         // </script>, </style>, </pre>
         matches_end_condition =
@@ -1489,6 +1552,10 @@ static void S_process_line(cmark_parser *parser, const unsigned char *buffer,
 
   parser->line_number++;
 
+  if ((parser->options & CMARK_OPT_FRONT_MATTER) &&
+      cmark_front_matter_process_line(parser, &input))
+    goto finished;
+
   last_matched_container = check_open_blocks(parser, &input, &all_matched);
 
   if (!last_matched_container)
@@ -1529,12 +1596,20 @@ cmark_node *cmark_parser_finish(cmark_parser *parser) {
     cmark_strbuf_clear(&parser->linebuf);
   }
 
+  // If front matter scanning was still active when the document ended, no
+  // closing delimiter was found.  The entire document (after the opening ---)
+  // is treated as front matter.
+  if ((parser->options & CMARK_OPT_FRONT_MATTER) && parser->front_matter_scanning)
+    cmark_front_matter_process_line(parser, NULL);
+
   finalize_document(parser);
 
   cmark_consolidate_text_nodes(parser->root);
 
   cmark_strbuf_free(&parser->curline);
   cmark_strbuf_free(&parser->linebuf);
+  cmark_strbuf_free(&parser->front_matter_buf);
+  cmark_strbuf_free(&parser->front_matter_info);
 
 #if CMARK_DEBUG_NODES
   if (cmark_node_check(parser->root, stderr)) {

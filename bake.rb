@@ -5,9 +5,28 @@
 # Copyright, 2015-2019, by Garen Torikian.
 # Copyright, 2016, by Yuki Izumi.
 # Copyright, 2017, by Ashe Connor.
-# Copyright, 2020-2023, by Samuel Williams.
+# Copyright, 2020-2026, by Samuel Williams.
 
 $LOAD_PATH << ::File.expand_path("ext", __dir__)
+
+# Update the project documentation with the new version number.
+#
+# @parameter version [String] The new version number.
+def after_gem_release_version_increment(version)
+	context["releases:update"].call(version)
+	context["utopia:project:update"].call
+end
+
+# Create a GitHub release for the given tag.
+#
+# @parameter tag [String] The tag to create a release for.
+def after_gem_release(tag:, **options)
+	context["releases:github:release"].call(tag)
+end
+
+def before_test
+	build
+end
 
 def build
 	ext_path = File.expand_path("ext/markly", __dir__)
@@ -27,11 +46,11 @@ def clean
 end
 
 def format
-	system('clang-format -style llvm -i ext/markly/*.c ext/markly/*.h')
+	system("clang-format -style llvm -i ext/markly/*.c ext/markly/*.h ext/markly/extensions/*.c ext/markly/extensions/*.h")
 end
 
 def benchmark
-	if ENV['FETCH_PROGIT']
+	if ENV["FETCH_PROGIT"]
 		`rm -rf test/progit`
 		`git clone https://github.com/progit/progit.git test/progit`
 		langs = %w[ar az be ca cs de en eo es es-ni fa fi fr hi hu id it ja ko mk nl no-nb pl pt-br ro ru sr th tr uk vi zh zh-tw]
@@ -39,22 +58,22 @@ def benchmark
 			`cat test/progit/#{lang}/*/*.markdown >> test/benchinput.md`
 		end
 	end
-	$LOAD_PATH.unshift 'lib'
-	load 'test/benchmark.rb'
+	$LOAD_PATH.unshift "lib"
+	load "test/benchmark.rb"
 end
 
 def synchronize_upstream
-	require 'build/files'
-	require 'build/files/system'
+	require "build/files"
+	require "build/files/system"
 	
 	root = Build::Files::Path[context.root]
 	ext_markly = root/"ext/markly"
-	cmark_gfm = root/"cmark-gfm"
+	cmarkly = root/"cmarkly"
 	
-	(cmark_gfm/"src").glob("**/*").copy(ext_markly)
-	(cmark_gfm/"extensions").glob("**/*").copy(ext_markly)
-	(cmark_gfm/"build/src").glob("config.h").copy(ext_markly)
-	(cmark_gfm/"build/src").glob("cmark-gfm_export.h").copy(ext_markly)
-	(cmark_gfm/"build/src").glob("cmark-gfm_version.h").copy(ext_markly)
-	(cmark_gfm/"build/extensions").glob("cmark-gfm-extensions_export.h").copy(ext_markly)
+	(cmarkly/"src").glob("**/*").copy(ext_markly)
+	(cmarkly/"extensions").glob("**/*").copy(ext_markly/"extensions")
+	(cmarkly/"build/src").glob("config.h").copy(ext_markly)
+	(cmarkly/"build/src").glob("cmark-gfm_export.h").copy(ext_markly)
+	(cmarkly/"build/src").glob("cmark-gfm_version.h").copy(ext_markly)
+	(cmarkly/"build/extensions").glob("cmark-gfm-extensions_export.h").copy(ext_markly/"extensions")
 end

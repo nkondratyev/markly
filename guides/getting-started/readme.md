@@ -42,7 +42,9 @@ Markly accepts integer flags which control how the Markdown is parsed and render
 | ------------------------------------ | -----------
 | `Markly::DEFAULT`                    | The default parsing system.
 | `Markly::UNSAFE`                     | Allow raw/custom HTML and unsafe links.
+| `Markly::FRONT_MATTER`               | Parse front matter at the start of the document.
 | `Markly::FOOTNOTES`                  | Parse footnotes.
+| `Markly::INLINE_CODE_INFO`           | Parse language prefixes such as `ruby:` on inline code spans.
 | `Markly::LIBERAL_HTML_TAG`           | Support liberal parsing of inline HTML tags.
 | `Markly::SMART`                      | Use smart punctuation (curly quotes, etc.).
 | `Markly::STRIKETHROUGH_DOUBLE_TILDE` | Parse strikethroughs by double tildes (compatibility with [redcarpet](https://github.com/vmg/redcarpet))
@@ -78,15 +80,19 @@ Markly.render_html("\"'Shelob' is my name.\"", flags: Markly::HARD_BREAKS|Markly
 
 ## Extensions
 
-Both `render_html` and `parse` take an optional third argument defining the extensions you want enabled as your CommonMark document is being processed. The documentation for these extensions are [defined in this spec](https://github.github.com/gfm/), and the rationale is provided [in this blog post](https://githubengineering.com/a-formal-spec-for-github-markdown/).
+Markly parses standard CommonMark by default. GitHub Flavored Markdown syntax
+and Markly-specific syntax are opt-in so applications can choose their accepted
+Markdown dialect explicitly:
 
-The available extensions are:
+``` ruby
+Markly.render_html(
+	"| Name | Status |\n| --- | --- |\n| Markly | Ready |",
+	extensions: [:table],
+)
+```
 
-  - `:table` - This provides support for tables.
-  - `:tasklist` - This provides support for task list items.
-  - `:strikethrough` - This provides support for strikethroughs.
-  - `:autolink` - This provides support for automatically converting URLs to anchor tags.
-  - `:tagfilter` - This escapes [several "unsafe" HTML tags](https://github.github.com/gfm/#disallowed-raw-html-extension-), causing them to not have any effect.
+See [Extensions](../extensions/index) for the supported extensions, related
+flags, and generated AST.
 
 ## Developing Locally
 

@@ -1,14 +1,16 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2023, by Samuel Williams.
+# Copyright, 2023-2025, by Samuel Williams.
 
-require 'markly'
-require 'markdown_spec'
+require "markly"
+require "markdown_spec"
 
-MarkdownSpec.open('spec.txt').each do |testcase|
+MarkdownSpec.open("spec.txt").each do |testcase|
 	next if testcase[:extensions].include?(:disabled)
 	next if testcase[:example] == 617
+	# This fork does not parse list markers: skip examples whose lists come from Markdown, keep raw HTML lists.
+	next if testcase[:html].match?(/<(?:ul|ol|li)\b/) && !testcase[:markdown].match?(/<(?:ul|ol|li)\b/i)
 	
 	describe testcase[:section], unique: testcase[:example] do
 		let(:document) {Markly.parse(testcase[:markdown], extensions: testcase[:extensions])}

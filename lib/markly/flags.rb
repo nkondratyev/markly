@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2020-2023, by Samuel Williams.
+# Copyright, 2020-2026, by Samuel Williams.
 
 module Markly
 	# The default parsing system.
@@ -18,8 +18,20 @@ module Markly
 	STRIKETHROUGH_DOUBLE_TILDE = 1 << 14
 	# Allow raw/custom HTML and unsafe links.
 	UNSAFE = 1 << 17
+	# Parse front matter ("---" delimited block at start of document).
+	# The raw content is available via node.string_content and the optional
+	# format hint (e.g. "yaml", "toml") via node.code_info; interpretation
+	# is left to the caller.
+	FRONT_MATTER = 1 << 18
+	# Parse language prefixes on inline code spans, e.g. ruby:`Object.new`.
+	INLINE_CODE_INFO = 1 << 19
+	# Allow consistently indented HTML content to continue across blank lines.
+	HTML_BLOCK_BLANK_LINES = 1 << 20
 	
 	PARSE_FLAGS = {
+		front_matter: FRONT_MATTER,
+		inline_code_info: INLINE_CODE_INFO,
+		html_block_blank_lines: HTML_BLOCK_BLANK_LINES,
 		validate_utf8: VALIDATE_UTF8,
 		smart_quotes: SMART,
 		liberal_html_tags: LIBERAL_HTML_TAG,

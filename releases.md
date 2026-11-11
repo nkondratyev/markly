@@ -1,0 +1,37 @@
+# Releases
+
+## v0.19.0
+
+  - Add `Markly::HTML_BLOCK_BLANK_LINES` for keeping consistently indented HTML content together across blank lines.
+
+## v0.18.0
+
+  - Preserve complete node and extension metadata when duplicating node trees.
+
+## v0.17.0
+
+  - Add opt-in language prefixes for inline code spans with `Markly::INLINE_CODE_INFO`, expose code metadata through `Node#code_info`, and provide `Node#code_language` as a convenient language accessor.
+  - Expose fenced code-block metadata through `Node#fence` and `Node::Fence`.
+  - Add `Node#next_header`, retain `Node#next_heading` as an alias, and correctly recognize header nodes.
+  - Raise `NotImplementedError` from the base renderer's unimplemented code-block callback instead of recursing indefinitely.
+  - Remove unused legacy separator helpers from the Ruby renderer.
+
+## v0.16.0
+
+  - Update `cmark-gfm` from upstream, including two table-rendering protections: avoid repeatedly scanning preceding cells, and limit the number of automatically completed cells to prevent denial of service.
+  - Correct `end_line` source positions for single-line and multi-line HTML blocks.
+  - Fix trailing newlines when rendering inline nodes.
+  - Add support for front matter (`CMARK_OPT_FRONT_MATTER`): a `---` delimited block at the start of a document is captured as a `CMARK_NODE_FRONT_MATTER` node.  The raw content is available via `node.string_content` and an optional format hint (e.g. `"yaml"`, `"toml"`) via `node.fence_info`.
+  - Allow `:` in HTML tag names to support XML namespace prefixes (e.g. `<svg:circle>`, `<xhtml:div>`).
+
+## v0.15.1
+
+  - Add agent context.
+
+## v0.15.0
+
+  - Introduced `Markly::Renderer::Headings` class for extracting headings from markdown documents with automatic duplicate ID resolution. When rendering HTML with `ids: true`, duplicate heading text now automatically gets unique IDs (`deployment`, `deployment-2`, `deployment-3`). The `Headings` class can also be used to extract headings for building navigation or table of contents.
+
+## v0.14.0
+
+  - Expose `Markly::Renderer::HTML.anchor_for` method to generate URL-safe anchors from headers.
