@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Add `Markly::NO_HTML_BLOCKS` for parsing lines that start with HTML as Markdown; HTML comments still open blocks. Inline HTML is unchanged, so this is not HTML sanitization.
+
 ## v0.19.0
 
   - Add `Markly::HTML_BLOCK_BLANK_LINES` for keeping consistently indented HTML content together across blank lines.

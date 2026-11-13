@@ -1247,11 +1247,14 @@ static void open_new_blocks(cmark_parser *parser, cmark_node **container,
                        parser->first_nonspace + matched - parser->offset,
                        false);
 
-    } else if (!indented && ((matched = scan_html_block_start(
-                                  input, parser->first_nonspace)) ||
-                             (cont_type != CMARK_NODE_PARAGRAPH &&
-                              (matched = scan_html_block_start_7(
-                                   input, parser->first_nonspace))))) {
+    } else if (!indented &&
+               ((matched = scan_html_block_start(
+                     input, parser->first_nonspace)) ||
+                (cont_type != CMARK_NODE_PARAGRAPH &&
+                 (matched = scan_html_block_start_7(
+                      input, parser->first_nonspace)))) &&
+               // Type 2 is an HTML comment.
+               (!(parser->options & CMARK_OPT_NO_HTML_BLOCKS) || matched == 2)) {
       *container = add_child(parser, *container, CMARK_NODE_HTML_BLOCK,
                              parser->first_nonspace + 1);
       (*container)->as.html_block.type = matched;
