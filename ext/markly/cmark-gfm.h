@@ -804,6 +804,12 @@ char *cmark_render_latex_with_mem(cmark_node *root, int options, int width, cmar
  */
 #define CMARK_OPT_HTML_BLOCK_BLANK_LINES (1 << 20)
 
+/** Do not open raw HTML blocks, except HTML comments: such lines are parsed
+ * as regular Markdown and their tags become inline HTML. Inline HTML is
+ * unchanged; this is not HTML sanitization.
+ */
+#define CMARK_OPT_NO_HTML_BLOCKS (1 << 21)
+
 /**
  * ## Version information
  */

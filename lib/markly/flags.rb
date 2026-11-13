@@ -27,11 +27,15 @@ module Markly
 	INLINE_CODE_INFO = 1 << 19
 	# Allow consistently indented HTML content to continue across blank lines.
 	HTML_BLOCK_BLANK_LINES = 1 << 20
+	# Parse lines starting with HTML as Markdown instead of raw HTML blocks; HTML comments still open blocks.
+	# Inline HTML is unchanged: this is not HTML sanitization.
+	NO_HTML_BLOCKS = 1 << 21
 	
 	PARSE_FLAGS = {
 		front_matter: FRONT_MATTER,
 		inline_code_info: INLINE_CODE_INFO,
 		html_block_blank_lines: HTML_BLOCK_BLANK_LINES,
+		no_html_blocks: NO_HTML_BLOCKS,
 		validate_utf8: VALIDATE_UTF8,
 		smart_quotes: SMART,
 		liberal_html_tags: LIBERAL_HTML_TAG,
